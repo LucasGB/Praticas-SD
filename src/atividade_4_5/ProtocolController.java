@@ -1,7 +1,5 @@
 package atividade_4_5;
 
-
-
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -24,6 +22,7 @@ public class ProtocolController {
     private final String nick;
     private final HashMap<String, InetAddress> onlineUsers;
     private final UIControl ui;
+    private final String ip;
 
     protected byte[] buffer;
 
@@ -36,17 +35,22 @@ public class ProtocolController {
 
         buffer = new byte[1024];
 
-        multicastSocket = new MulticastSocket(mport);
+        this.multicastSocket = new MulticastSocket(mport);
         udpSocket = new DatagramSocket(uport);
 
         onlineUsers = new HashMap<>();
         onlineUsers.put("Todos", group);
+
+        try (final DatagramSocket socket = new DatagramSocket()) {
+            socket.connect(InetAddress.getByName("8.8.8.8"), 10002);
+            this.ip = socket.getLocalAddress().getHostAddress();
+        }
     }
 
     public void send(String targetUser, String msg) throws IOException {
         Message message;
         byte typeMsg;
-        if(targetUser.equals("Todos")) {
+        if (targetUser.equals("Todos")) {
             typeMsg = (byte) 0x03;
             message = new Message(typeMsg, nick, msg);
             this.sendMessageGroup(message);
@@ -62,13 +66,13 @@ public class ProtocolController {
 
         System.out.println("Sending message to group");
         DatagramPacket packet = new DatagramPacket(messagePacket, messagePacket.length, group, mport);
-        multicastSocket.send(packet);
+        this.multicastSocket.send(packet);
         System.out.println("Sent message to group");
     }
 
     private void sendMessage(Message msg, InetAddress target) throws IOException {
         byte[] messagePacket = msg.getBytes();
-        
+
         System.out.println("Sending message to target");
         DatagramPacket packet = new DatagramPacket(messagePacket, messagePacket.length, target, uport);
         udpSocket.send(packet);
@@ -76,11 +80,11 @@ public class ProtocolController {
     }
 
     public void join() throws IOException {
-        multicastSocket.joinGroup(group);
+        this.multicastSocket.joinGroup(group);
 
         byte typeMsg = (byte) 0x01;
         String msg = "";
-        
+
         System.out.println("Joined group");
 
         Message message = new Message(typeMsg, nick, msg);
@@ -90,11 +94,11 @@ public class ProtocolController {
     public void leave() throws IOException {
         byte typeMsg = (byte) 0x05;
         String msg = "";
-        
+
         Message message = new Message(typeMsg, nick, msg);
         this.sendMessageGroup(message);
-        
-        multicastSocket.leaveGroup(group);
+
+        this.multicastSocket.leaveGroup(group);
         close();
     }
 
@@ -102,8 +106,8 @@ public class ProtocolController {
         if (udpSocket != null) {
             udpSocket.close();
         }
-        if (multicastSocket != null) {
-            multicastSocket.close();
+        if (this.multicastSocket != null) {
+            this.multicastSocket.close();
         }
     }
 
@@ -112,7 +116,7 @@ public class ProtocolController {
 
         switch (message.getType()) {
             case 1:
-                ui.update(message);                
+                ui.update(message);
                 break;
             case 2:
                 ui.update(message);
@@ -123,10 +127,30 @@ public class ProtocolController {
                 System.out.println("Sent JOINACK");
                 break;
             case 3:
-                ui.update(message);
+
+                // Mostrar para o professor
+                // O cliente que envia o multicast recebe o próprio pacote pelo grupo.
+                // Verifico e ignoro os pacotes com endereço igual ao dos sockets.
+                if (packet.getAddress() == this.multicastSocket.getInetAddress()
+                        || packet.getAddress() == udpSocket.getInetAddress()) {
+                    break;
+                } else {
+                    ui.update(message);
+                }
                 break;
             case 4:
-                ui.update(message);
+                System.out.println("Packet Address: " + packet.getAddress());
+                System.out.println("this.multicastSocket Address: " + this.multicastSocket.getInetAddress());
+                System.out.println("udpSocket Address: " + udpSocket.getInetAddress());
+                // Mostrar para o professor
+                // O cliente que envia o multicast recebe o próprio pacote pelo grupo.
+                // Verifico e ignoro os pacotes com endereço igual ao dos sockets.
+                if (packet.getAddress() == this.multicastSocket.getInetAddress()
+                        || packet.getAddress() == udpSocket.getInetAddress()) {
+                    break;
+                } else {
+                    ui.update(message);
+                }
                 break;
             case 5:
                 ui.update(message);
@@ -136,8 +160,19 @@ public class ProtocolController {
 
     public void receiveMulticastPacket() throws IOException {
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-        multicastSocket.receive(packet);
-        processPacket(packet);
+        this.multicastSocket.receive(packet);
+
+        System.out.println("Packet Address: " + packet.getAddress().toString());
+        System.out.println("multicastSocket Address: " + this.multicastSocket.getInetAddress());
+        System.out.println("udpSocket Address: " + udpSocket.getInetAddress());
+        System.out.println(this.ip);
+
+        if (!(packet.getAddress().toString().equals(this.ip)
+                || packet.getAddress().toString().equals(this.ip))) {
+            System.out.println("Process");
+            processPacket(packet);
+        }
+
     }
 
     public void receiveUdpPacket() throws IOException {
